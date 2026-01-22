@@ -1,0 +1,27 @@
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.env
+.env.*
+
+# Data (DO NOT COMMIT)
+data/
+csv_export/
+*.csv
+*.sqlite3
+*.db
+
+# Excel / locks (DO NOT COMMIT)
+*.xlsx
+.~lock.*.xlsx#
+*.xlsm
+*.xls
+
+# Logs
+*.log
