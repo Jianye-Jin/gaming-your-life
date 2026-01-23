@@ -1,0 +1,2 @@
+[console_scripts]
+fate = gml.cli:main

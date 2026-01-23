@@ -1,0 +1,16 @@
+Metadata-Version: 2.4
+Name: fate-gml
+Version: 0.1.0
+Summary: A local-first, gamified personal growth tracker (CLI).
+Requires-Python: >=3.11
+Description-Content-Type: text/markdown
+Requires-Dist: openpyxl
+
+# Gaming My Life (GML)
+
+A local-first, gamified personal growth tracker.
+- Code is public.
+- Personal data (xlsx/csv/sqlite) stays local and is ignored by git.
+
+## Run (v0.1)
+- See `v0.1/` folder.
