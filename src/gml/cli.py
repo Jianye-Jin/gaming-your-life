@@ -1,161 +1,246 @@
 #!/usr/bin/env python3
 """
-Gaming My Life (GML) — v0.1 CLI logger
+Fate (Gaming My Life) — SQLite edition
 
-What this does:
-- Append completed tasks into Daily_Log (event log)
-- Compute today's Daily Pass gate: BODY>=1 and MAIN>=1 and HOME>=1
-- If pass: mark today's Chest_Queue row as Eligible=1 and (optionally) Revealed=1 with timestamp
+Behavior aligned with your current Excel CLI:
+- Interactive: input Task_IDs -> minutes -> notes
+- Daily pass gate: BODY>=1 and MAIN>=1 and HOME>=1
+- If pass: mark chest eligible; with --reveal also mark revealed
+- Subcommand: fate init (safe, idempotent; won't overwrite unless --force)
 
-Usage:
-  python gml_cli.py --file GML_v0_1.xlsx
+Data lives locally:
+- default DB: ~/.fate/fate.db
+- env override: FATE_DB=/path/to/fate.db
 """
 
 from __future__ import annotations
+
 import argparse
 import datetime as dt
-from pathlib import Path
 import os
+import sys
 from pathlib import Path
 
-import openpyxl
+from gml import db
+from gml.export_xlsx import export_xlsx
+from gml.export_csv import export_csv_bundle
 
 def today_str() -> str:
     return dt.date.today().isoformat()
 
-def load_wb(path: Path) -> openpyxl.Workbook:
-    if not path.exists():
-        raise FileNotFoundError(f"Excel file not found: {path}")
-    return openpyxl.load_workbook(path)
 
-def read_tasks(wb: openpyxl.Workbook):
-    ws = wb["TASKS"]
-    rows = list(ws.iter_rows(min_row=2, values_only=True))
-    tasks = []
-    for r in rows:
-        if not r[0]:
-            continue
-        tasks.append({
-            "Task_ID": str(r[0]).strip(),
-            "Category": str(r[1]).strip(),
-            "Cadence": str(r[2]).strip(),
-            "Task_Name": str(r[3]).strip(),
-            "Default_Minutes": r[5],
-        })
-    return tasks
-
-def append_log(wb: openpyxl.Workbook, date: str, task_id: str, category: str, minutes: int, notes: str=""):
-    ws = wb["Daily_Log"]
-    # Find next row (append)
-    next_row = ws.max_row + 1
-    ts = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    entry_id = next_row - 1  # simple incremental id (header=1)
-    ws.cell(next_row, 1, entry_id)
-    ws.cell(next_row, 2, date)
-    ws.cell(next_row, 3, task_id)
-    ws.cell(next_row, 4, category)
-    ws.cell(next_row, 5, minutes)
-    ws.cell(next_row, 6, "")  # quality optional
-    ws.cell(next_row, 7, notes)
-    ws.cell(next_row, 8, "")  # evidence link optional
-    ws.cell(next_row, 9, ts)
-
-def counts_for_date(wb: openpyxl.Workbook, date: str):
-    ws = wb["Daily_Log"]
-    # Columns: B Date, D Category
-    counts = {"BODY":0,"MAIN":0,"HOME":0,"EXP":0}
-    total_minutes = 0
-    for row in ws.iter_rows(min_row=2, values_only=True):
-        if not row or not row[1]:
-            continue
-        if str(row[1]).strip() != date:
-            continue
-        cat = (str(row[3]).strip() if row[3] else "")
-        if cat in counts:
-            counts[cat] += 1
-        try:
-            total_minutes += int(row[4] or 0)
-        except Exception:
-            pass
-    return counts, total_minutes
-
-def mark_chest(wb: openpyxl.Workbook, date: str, reveal: bool):
-    ws = wb["Chest_Queue"]
-    # find matching date in col A
-    for r in range(2, ws.max_row+1):
-        if str(ws.cell(r,1).value).strip() == date:
-            ws.cell(r,2).value = 1  # eligible
-            if reveal:
-                ws.cell(r,5).value = 1
-                ws.cell(r,6).value = dt.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            return True
-    return False
-
-def default_xlsx_path() -> str:
-    # 1) explicit env override
-    p = os.environ.get("FATE_FILE")
+def default_db_path_str() -> str:
+    p = os.environ.get("FATE_DB")
     if p:
-        return p
+        return str(Path(p).expanduser())
+    return str(Path("~/.fate/fate.db").expanduser())
 
-    # 2) user home default
-    home_default = Path("~/.fate/GML.xlsx").expanduser()
-    if home_default.exists():
-        return str(home_default)
 
-    # 3) repo-local fallback (your current layout)
-    repo_fallback = Path("v0.1/GML_v0_1.xlsx")
-    if repo_fallback.exists():
-        return str(repo_fallback)
+def cmd_init(argv: list[str]) -> None:
+    ap = argparse.ArgumentParser(prog="fate init", description="Initialize a local SQLite DB for Fate.")
+    ap.add_argument("--db", type=str, default=default_db_path_str(), help="DB path (default: ~/.fate/fate.db)")
+    ap.add_argument("--seed", action="store_true", help="Seed a few starter tasks if tasks table is empty.")
+    ap.add_argument("--force", action="store_true", help="DANGEROUS: overwrite existing DB (will backup first).")
+    args = ap.parse_args(argv)
 
-    # 4) last resort
-    return str(home_default)
+    db_path = Path(args.db).expanduser().resolve()
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+
+    if db_path.exists() and args.force:
+        # backup then overwrite
+        db.backup_before_write(db_path)
+        db_path.unlink()
+
+    # idempotent init (safe if exists)
+    db.init_db(db_path)
+
+    if args.seed:
+        db.seed_tasks_if_empty(db_path)
+
+    print(f"✅ DB ready: {db_path}")
+    if args.seed:
+        print("✅ Seeded starter tasks.")
+    print("Tip: set env var FATE_DB to pin the DB path.")
+
+
+def cmd_task_list(argv: list[str]) -> None:
+    ap = argparse.ArgumentParser(prog="fate task list")
+    ap.add_argument("--db", type=str, default=default_db_path_str())
+    args = ap.parse_args(argv)
+
+    db_path = Path(args.db).expanduser().resolve()
+    db.init_db(db_path)
+
+    tasks = db.list_tasks(db_path)
+    if not tasks:
+        print("No tasks found.")
+        print("Run: fate init --seed   OR   fate task add ...")
+        return
+
+    for t in tasks:
+        print(f"  {t['id']:6s} [{t['domain']}] {t['name']} (default {t['default_minutes']} min)")
+
+
+def cmd_task_add(argv: list[str]) -> None:
+    ap = argparse.ArgumentParser(prog="fate task add")
+    ap.add_argument("--db", type=str, default=default_db_path_str())
+    ap.add_argument("--id", required=True)
+    ap.add_argument("--name", required=True)
+    ap.add_argument("--domain", required=True, choices=["BODY", "MAIN", "HOME", "EXP"])
+    ap.add_argument("--cadence", default="daily")
+    ap.add_argument("--default-minutes", type=int, default=0)
+    ap.add_argument("--default-xp", type=int, default=0)
+    args = ap.parse_args(argv)
+
+    db_path = Path(args.db).expanduser().resolve()
+    db.init_db(db_path)
+
+    db.add_task(
+        db_path,
+        tid=args.id.strip().upper(),
+        name=args.name.strip(),
+        domain=args.domain.strip().upper(),
+        cadence=args.cadence.strip(),
+        default_minutes=args.default_minutes,
+        default_xp=args.default_xp,
+    )
+    print(f"✅ Added task: {args.id.strip().upper()} [{args.domain.strip().upper()}] {args.name.strip()}")
+
+def cmd_export_xlsx(argv: list[str]) -> None:
+    ap = argparse.ArgumentParser(prog="fate export xlsx", description="Export SQLite data to an XLSX workbook.")
+    ap.add_argument("--db", type=str, default=default_db_path_str())
+    ap.add_argument("--out", type=str, default=None, help="Output .xlsx path (default: ~/.fate/exports/...)")
+    ap.add_argument("--since", type=str, default=None, help="YYYY-MM-DD (inclusive)")
+    ap.add_argument("--until", type=str, default=None, help="YYYY-MM-DD (inclusive)")
+    ap.add_argument("--overwrite", action="store_true", help="Overwrite if output exists.")
+    args = ap.parse_args(argv)
+
+    db_path = Path(args.db).expanduser().resolve()
+
+    if args.out:
+        out_path = Path(args.out).expanduser().resolve()
+    else:
+        export_dir = Path("~/.fate/exports").expanduser()
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_path = export_dir / f"fate_export_{ts}.xlsx"
+
+    if out_path.exists() and not args.overwrite:
+        raise SystemExit(f"Output exists: {out_path}\nUse --overwrite or provide a new --out path.")
+
+    out = export_xlsx(db_path=db_path, out_path=out_path, since=args.since, until=args.until)
+    print(f"✅ Exported: {out}")
+
+def cmd_export_csv(argv: list[str]) -> None:
+    ap = argparse.ArgumentParser(prog="fate export csv", description="Export SQLite data to CSV files.")
+    ap.add_argument("--db", type=str, default=default_db_path_str())
+    ap.add_argument("--out-dir", type=str, default=None, help="Output directory (default: ~/.fate/exports/csv/<timestamp>/)")
+    ap.add_argument("--since", type=str, default=None, help="YYYY-MM-DD (inclusive)")
+    ap.add_argument("--until", type=str, default=None, help="YYYY-MM-DD (inclusive)")
+    ap.add_argument("--overwrite", action="store_true", help="Overwrite output files if they exist.")
+    args = ap.parse_args(argv)
+
+    db_path = Path(args.db).expanduser().resolve()
+
+    if args.out_dir:
+        out_dir = Path(args.out_dir).expanduser().resolve()
+    else:
+        base = Path("~/.fate/exports/csv").expanduser()
+        ts = dt.datetime.now().strftime("%Y%m%d_%H%M%S")
+        out_dir = base / ts
+
+    out = export_csv_bundle(
+        db_path=db_path,
+        out_dir=out_dir,
+        since=args.since,
+        until=args.until,
+        overwrite=args.overwrite,
+    )
+    print(f"✅ Exported CSV folder: {out}")
+    print(f"   - {out / 'tasks.csv'}")
+    print(f"   - {out / 'log.csv'}")
+    print(f"   - {out / 'chests.csv'}")
+
+def interactive_daily(db_path: Path, date_str: str, reveal: bool) -> None:
+    tasks = db.list_tasks(db_path)
+    if not tasks:
+        print("No tasks found.")
+        print("Run: fate init --seed   OR   fate task add ...")
+        return
+
+    print(f"\nFate — {date_str}\n")
+    print("Pick tasks you completed today (comma separated Task_ID), or press Enter to skip logging.\n")
+    print("Available tasks:")
+    for t in tasks:
+        print(f"  {t['id']:6s} [{t['domain']}] {t['name']}")
+
+    raw = input("\nTask_IDs: ").strip()
+    if raw:
+        ids = [x.strip().upper() for x in raw.split(",") if x.strip()]
+        task_map = {str(t["id"]): t for t in tasks}
+
+        # Safety: backup DB before we write
+        db.backup_before_write(db_path)
+
+        for tid in ids:
+            match = task_map.get(tid)
+            if not match:
+                print(f"  ! Unknown Task_ID: {tid} (skipped)")
+                continue
+
+            default_m = int(match["default_minutes"] or 0)
+            mins_raw = input(f"  Minutes for {tid} (default {default_m}): ").strip()
+            minutes = int(mins_raw) if mins_raw else default_m
+            notes = input("  Notes (optional): ").strip()
+
+            db.insert_log(db_path, date_str, tid, minutes, notes)
+            print("  ✓ logged")
+
+    counts, total_minutes, total_xp = db.counts_for_date(db_path, date_str)
+    daily_pass = (counts["BODY"] >= 1 and counts["MAIN"] >= 1 and counts["HOME"] >= 1)
+
+    print("\nToday summary:")
+    print(f"  BODY={counts['BODY']}  MAIN={counts['MAIN']}  HOME={counts['HOME']}  EXP={counts['EXP']}  minutes={total_minutes}  xp={total_xp}")
+    print(f"  Daily Pass: {'YES' if daily_pass else 'NO'} (needs BODY>=1 & MAIN>=1 & HOME>=1)")
+
+    if daily_pass:
+        db.mark_chest(db_path, date_str, reveal=reveal)
+        print("  Chest: eligible marked" + (" + revealed" if reveal else ""))
+
+    print(f"\nDB: {db_path}\n")
+
 
 def main():
+    # subcommands
+    if len(sys.argv) >= 2 and sys.argv[1] == "init":
+        cmd_init(sys.argv[2:])
+        return
+    if len(sys.argv) >= 3 and sys.argv[1] == "task" and sys.argv[2] == "list":
+        cmd_task_list(sys.argv[3:])
+        return
+    if len(sys.argv) >= 3 and sys.argv[1] == "task" and sys.argv[2] == "add":
+        cmd_task_add(sys.argv[3:])
+        return
+    if len(sys.argv) >= 3 and sys.argv[1] == "export" and sys.argv[2] == "xlsx":
+        cmd_export_xlsx(sys.argv[3:])
+        return
+    if len(sys.argv) >= 3 and sys.argv[1] == "export" and sys.argv[2] == "csv":
+        cmd_export_csv(sys.argv[3:])
+        return
+
+    # default command (aligned with your current interface)
     ap = argparse.ArgumentParser()
-    ap.add_argument("--file", type=str, default=default_xlsx_path())
+    # keep a compatibility alias: --file works as --db (so your muscle memory won't break)
+    ap.add_argument("--db", type=str, default=default_db_path_str())
+    ap.add_argument("--file", type=str, default=None, help="(deprecated) alias of --db")
     ap.add_argument("--date", type=str, default=today_str())
     ap.add_argument("--reveal", action="store_true", help="also reveal (open) today's chest if Daily Pass")
     args = ap.parse_args()
 
-    path = Path(args.file).expanduser().resolve()
-    wb = load_wb(path)
-    tasks = read_tasks(wb)
+    db_path = Path((args.file or args.db)).expanduser().resolve()
+    db.init_db(db_path)
 
-    # Quick menu
-    print(f"\nGML v0.1 — {args.date}\n")
-    print("Pick tasks you completed today (comma separated Task_ID), or press Enter to skip logging.\n")
-    print("Available tasks:")
-    for t in tasks:
-        print(f"  {t['Task_ID']:6s} [{t['Category']}] {t['Task_Name']}")
-    raw = input("\nTask_IDs: ").strip()
-    if raw:
-        ids = [x.strip().upper() for x in raw.split(",") if x.strip()]
-        for tid in ids:
-            match = next((t for t in tasks if t["Task_ID"] == tid), None)
-            if not match:
-                print(f"  ! Unknown Task_ID: {tid} (skipped)")
-                continue
-            mins_raw = input(f"  Minutes for {tid} (default {match['Default_Minutes']}): ").strip()
-            minutes = int(mins_raw) if mins_raw else int(match["Default_Minutes"] or 0)
-            notes = input("  Notes (optional): ").strip()
-            append_log(wb, args.date, tid, match["Category"], minutes, notes)
-            print("  ✓ logged")
-    counts, total_minutes = counts_for_date(wb, args.date)
-    daily_pass = (counts["BODY"]>=1 and counts["MAIN"]>=1 and counts["HOME"]>=1)
+    interactive_daily(db_path, args.date, reveal=args.reveal)
 
-    print("\nToday summary:")
-    print(f"  BODY={counts['BODY']}  MAIN={counts['MAIN']}  HOME={counts['HOME']}  EXP={counts['EXP']}  minutes={total_minutes}")
-    print(f"  Daily Pass: {'YES' if daily_pass else 'NO'} (needs BODY>=1 & MAIN>=1 & HOME>=1)")
-
-    if daily_pass:
-        ok = mark_chest(wb, args.date, reveal=args.reveal)
-        if ok:
-            print("  Chest: eligible marked" + (" + revealed" if args.reveal else ""))
-        else:
-            print("  Chest: could not find today's row in Chest_Queue")
-
-    wb.save(path)
-    print(f"\nSaved: {path}\n")
 
 if __name__ == "__main__":
     main()
