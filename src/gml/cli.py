@@ -106,6 +106,67 @@ def cmd_task_add(argv: list[str]) -> None:
     )
     print(f"✅ Added task: {args.id.strip().upper()} [{args.domain.strip().upper()}] {args.name.strip()}")
 
+def _daily_pass(counts: dict) -> bool:
+    return (counts.get("BODY", 0) >= 1 and counts.get("MAIN", 0) >= 1 and counts.get("HOME", 0) >= 1)
+
+def cmd_stats(argv: list[str]) -> None:
+    ap = argparse.ArgumentParser(prog="fate stats", description="Show stats for today or recent days.")
+    ap.add_argument("scope", nargs="?", default="today", choices=["today", "week"])
+    ap.add_argument("--db", type=str, default=default_db_path_str())
+    ap.add_argument("--date", type=str, default=today_str(), help="YYYY-MM-DD (end date)")
+    ap.add_argument("--days", type=int, default=7, help="for scope=week, number of days ending at --date")
+    args = ap.parse_args(argv)
+
+    db_path = Path(args.db).expanduser().resolve()
+    db.init_db(db_path)
+
+    end = dt.date.fromisoformat(args.date)
+
+    if args.scope == "today":
+        d = end.isoformat()
+        counts, mins, xp = db.counts_for_date(db_path, d)
+        passed = _daily_pass(counts)
+
+        print(f"\nFate Stats — {d}")
+        print(f"  BODY={counts['BODY']}  MAIN={counts['MAIN']}  HOME={counts['HOME']}  EXP={counts['EXP']}")
+        print(f"  Minutes={mins}  XP={xp}")
+        print(f"  Daily Pass: {'YES' if passed else 'NO'} (needs BODY>=1 & MAIN>=1 & HOME>=1)\n")
+        return
+
+    # week (or last N days)
+    n = max(1, int(args.days))
+    rows = []
+    pass_days = 0
+    total_mins = 0
+    total_xp = 0
+
+    for i in range(n):
+        day = (end - dt.timedelta(days=(n - 1 - i))).isoformat()
+        counts, mins, xp = db.counts_for_date(db_path, day)
+        passed = _daily_pass(counts)
+        rows.append((day, passed, mins, xp, counts))
+        pass_days += 1 if passed else 0
+        total_mins += mins
+        total_xp += xp
+
+    # streak ending at end-date
+    streak = 0
+    for i in range(0, 365):  # cap
+        day = (end - dt.timedelta(days=i)).isoformat()
+        counts, _, _ = db.counts_for_date(db_path, day)
+        if _daily_pass(counts):
+            streak += 1
+        else:
+            break
+
+    print(f"\nFate Stats — last {n} days (ending {end.isoformat()})")
+    print("  date        pass  mins  xp   BODY MAIN HOME EXP")
+    for day, passed, mins, xp, c in rows:
+        p = "YES " if passed else "NO  "
+        print(f"  {day}  {p}  {mins:4d}  {xp:3d}   {c['BODY']:4d} {c['MAIN']:4d} {c['HOME']:4d} {c['EXP']:3d}")
+
+    print(f"\nSummary: pass_days={pass_days}/{n}  total_minutes={total_mins}  total_xp={total_xp}  streak={streak}\n")
+
 def cmd_export_xlsx(argv: list[str]) -> None:
     ap = argparse.ArgumentParser(prog="fate export xlsx", description="Export SQLite data to an XLSX workbook.")
     ap.add_argument("--db", type=str, default=default_db_path_str())
@@ -213,6 +274,9 @@ def main():
     # subcommands
     if len(sys.argv) >= 2 and sys.argv[1] == "init":
         cmd_init(sys.argv[2:])
+        return
+    if len(sys.argv) >= 2 and sys.argv[1] == "stats":
+        cmd_stats(sys.argv[2:])
         return
     if len(sys.argv) >= 3 and sys.argv[1] == "task" and sys.argv[2] == "list":
         cmd_task_list(sys.argv[3:])
