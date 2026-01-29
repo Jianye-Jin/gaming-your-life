@@ -28,3 +28,16 @@ csv_export/
 
 *.egg-info/
 src/*.egg-info/
+
+# Streamlit
+.streamlit/secrets.toml
+
+# Python tooling caches
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# SQLite variants
+*.sqlite
