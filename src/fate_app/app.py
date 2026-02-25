@@ -348,104 +348,122 @@ def consistency_page() -> None:
     st.title(nav_label("consistency"))
     habits = crud.list_habits(active_only=False)
 
-    st.subheader(label("section.add_habit", "Add Habit"))
-    with st.form("habit_add_form"):
-        name = st.text_input(label("field.name", "Name"))
-        group = st.selectbox(
-            label("field.group", "Group"),
-            ["growth", "health", "maintenance"],
-            format_func=group_label,
-        )
-        min_desc = st.text_input(label("field.min_desc", "Min Description"))
-        normal_desc = st.text_input(label("field.normal_desc", "Normal Description"))
-        min_xp = st.number_input(label("field.min_xp", "Min XP"), min_value=0, value=1, step=1)
-        normal_xp = st.number_input(
-            label("field.normal_xp", "Normal XP"), min_value=0, value=2, step=1
-        )
-        sort_order = st.number_input(
-            label("field.sort_order", "Sort Order"), min_value=0, value=0, step=1
-        )
-        active = st.checkbox(label("field.active", "Active"), value=True)
-        if st.form_submit_button(label("btn.create_habit", "Create Habit")):
-            if not name.strip():
-                st.error(label("error.name_required", "Name is required."))
-            else:
-                crud.upsert_habit(
-                    name.strip(),
-                    group,
-                    min_desc,
-                    normal_desc,
-                    int(min_xp),
-                    int(normal_xp),
-                    1 if active else 0,
-                    int(sort_order),
-                )
-                st.success(label("msg.habit_created", "Habit created."))
-                st.rerun()
-
-    st.subheader(label("section.edit_habits", "Edit Habits"))
-    if not habits:
+    if habits:
+        habit_rows = []
+        for habit in habits:
+            habit_rows.append(
+                {
+                    label("field.name", "Name"): habit["name"],
+                    label("field.group", "Group"): group_label(habit["group"]),
+                    label("field.min_desc", "Min Description"): habit.get("min_desc") or "",
+                    label("field.normal_desc", "Normal Description"): habit.get("normal_desc") or "",
+                    label("field.min_xp", "Min XP"): habit["min_xp"],
+                    label("field.normal_xp", "Normal XP"): habit["normal_xp"],
+                    label("field.sort_order", "Sort Order"): habit["sort_order"],
+                    label("field.active", "Active"): yes_no(bool(habit["active"])),
+                }
+            )
+        st.dataframe(habit_rows, use_container_width=True, hide_index=True)
+    else:
         st.info(label("info.no_habits", "No habits yet."))
+
+    with st.expander(label("section.add_habit", "Add Habit"), expanded=not habits):
+        with st.form("habit_add_form"):
+            name = st.text_input(label("field.name", "Name"))
+            group = st.selectbox(
+                label("field.group", "Group"),
+                ["growth", "health", "maintenance"],
+                format_func=group_label,
+            )
+            min_desc = st.text_input(label("field.min_desc", "Min Description"))
+            normal_desc = st.text_input(label("field.normal_desc", "Normal Description"))
+            min_xp = st.number_input(label("field.min_xp", "Min XP"), min_value=0, value=1, step=1)
+            normal_xp = st.number_input(
+                label("field.normal_xp", "Normal XP"), min_value=0, value=2, step=1
+            )
+            sort_order = st.number_input(
+                label("field.sort_order", "Sort Order"), min_value=0, value=0, step=1
+            )
+            active = st.checkbox(label("field.active", "Active"), value=True)
+            if st.form_submit_button(label("btn.create_habit", "Create Habit")):
+                if not name.strip():
+                    st.error(label("error.name_required", "Name is required."))
+                else:
+                    crud.upsert_habit(
+                        name.strip(),
+                        group,
+                        min_desc,
+                        normal_desc,
+                        int(min_xp),
+                        int(normal_xp),
+                        1 if active else 0,
+                        int(sort_order),
+                    )
+                    st.success(label("msg.habit_created", "Habit created."))
+                    st.rerun()
+
+    if not habits:
         return
 
     habit_map = {habit["id"]: habit for habit in habits}
-    selected_id = st.selectbox(
-        label("field.select_habit", "Select Habit"),
-        options=list(habit_map.keys()),
-        format_func=lambda hid: habit_map[hid]["name"],
-    )
-    habit = habit_map[selected_id]
-    with st.form("habit_edit_form"):
-        name = st.text_input(label("field.name", "Name"), value=habit["name"])
-        group = st.selectbox(
-            label("field.group", "Group"),
-            ["growth", "health", "maintenance"],
-            index=["growth", "health", "maintenance"].index(habit["group"]),
-            format_func=group_label,
+    with st.expander(label("section.edit_habits", "Edit Habits")):
+        selected_id = st.selectbox(
+            label("field.select_habit", "Select Habit"),
+            options=list(habit_map.keys()),
+            format_func=lambda hid: habit_map[hid]["name"],
         )
-        min_desc = st.text_input(
-            label("field.min_desc", "Min Description"), value=habit.get("min_desc") or ""
-        )
-        normal_desc = st.text_input(
-            label("field.normal_desc", "Normal Description"),
-            value=habit.get("normal_desc") or "",
-        )
-        min_xp = st.number_input(
-            label("field.min_xp", "Min XP"),
-            min_value=0,
-            value=int(habit["min_xp"]),
-            step=1,
-        )
-        normal_xp = st.number_input(
-            label("field.normal_xp", "Normal XP"),
-            min_value=0,
-            value=int(habit["normal_xp"]),
-            step=1,
-        )
-        sort_order = st.number_input(
-            label("field.sort_order", "Sort Order"),
-            min_value=0,
-            value=int(habit["sort_order"]),
-            step=1,
-        )
-        active = st.checkbox(label("field.active", "Active"), value=bool(habit["active"]))
-        if st.form_submit_button(label("btn.save_habit", "Save Habit")):
-            if not name.strip():
-                st.error(label("error.name_required", "Name is required."))
-            else:
-                crud.upsert_habit(
-                    name.strip(),
-                    group,
-                    min_desc,
-                    normal_desc,
-                    int(min_xp),
-                    int(normal_xp),
-                    1 if active else 0,
-                    int(sort_order),
-                    habit_id=habit["id"],
-                )
-                st.success(label("msg.habit_updated", "Habit updated."))
-                st.rerun()
+        habit = habit_map[selected_id]
+        with st.form("habit_edit_form"):
+            name = st.text_input(label("field.name", "Name"), value=habit["name"])
+            group = st.selectbox(
+                label("field.group", "Group"),
+                ["growth", "health", "maintenance"],
+                index=["growth", "health", "maintenance"].index(habit["group"]),
+                format_func=group_label,
+            )
+            min_desc = st.text_input(
+                label("field.min_desc", "Min Description"), value=habit.get("min_desc") or ""
+            )
+            normal_desc = st.text_input(
+                label("field.normal_desc", "Normal Description"),
+                value=habit.get("normal_desc") or "",
+            )
+            min_xp = st.number_input(
+                label("field.min_xp", "Min XP"),
+                min_value=0,
+                value=int(habit["min_xp"]),
+                step=1,
+            )
+            normal_xp = st.number_input(
+                label("field.normal_xp", "Normal XP"),
+                min_value=0,
+                value=int(habit["normal_xp"]),
+                step=1,
+            )
+            sort_order = st.number_input(
+                label("field.sort_order", "Sort Order"),
+                min_value=0,
+                value=int(habit["sort_order"]),
+                step=1,
+            )
+            active = st.checkbox(label("field.active", "Active"), value=bool(habit["active"]))
+            if st.form_submit_button(label("btn.save_habit", "Save Habit")):
+                if not name.strip():
+                    st.error(label("error.name_required", "Name is required."))
+                else:
+                    crud.upsert_habit(
+                        name.strip(),
+                        group,
+                        min_desc,
+                        normal_desc,
+                        int(min_xp),
+                        int(normal_xp),
+                        1 if active else 0,
+                        int(sort_order),
+                        habit_id=habit["id"],
+                    )
+                    st.success(label("msg.habit_updated", "Habit updated."))
+                    st.rerun()
 
 
 def mainlines_page() -> None:
