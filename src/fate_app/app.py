@@ -98,6 +98,10 @@ LABEL_KEYS = {
     "field.next_change": "Next Change",
     "label.next_action": "Next Action",
     "label.progress": "Progress",
+    "label.weighted_progress": "Weighted Progress",
+    "label.line_progress": "Line Progress",
+    "label.chapter_progress": "Chapter Progress",
+    "label.uncategorized": "Uncategorized",
     "label.total_habits": "Total Habits",
     "label.total_lines": "Total Lines",
     "label.total_quest_completions": "Total Quest Completions",
@@ -475,36 +479,62 @@ def mainlines_page() -> None:
     )
     lines = crud.list_lines(active_only=False, line_type=filter_choice)
 
-    st.subheader(label("section.add_line", "Add Line"))
-    with st.form("line_add_form"):
-        name = st.text_input(label("field.name", "Name"))
-        line_type = st.selectbox(
-            label("field.type", "Type"),
-            ["main", "side"],
-            format_func=line_type_label,
-        )
-        ultimate_goal = st.text_area(label("field.ultimate_goal", "Ultimate Goal"))
-        sort_order = st.number_input(
-            label("field.sort_order", "Sort Order"), min_value=0, value=0, step=1
-        )
-        active = st.checkbox(label("field.active", "Active"), value=True)
-        if st.form_submit_button(label("btn.create_line", "Create Line")):
-            if not name.strip():
-                st.error(label("error.name_required", "Name is required."))
-            else:
-                crud.upsert_line(
-                    name.strip(),
-                    line_type,
-                    ultimate_goal,
-                    1 if active else 0,
-                    int(sort_order),
-                )
-                st.success(label("msg.line_created", "Line created."))
-                st.rerun()
-
     if not lines:
         st.info(label("info.no_lines", "No lines yet."))
+        with st.expander(label("section.add_line", "Add Line"), expanded=True):
+            with st.form("line_add_form"):
+                name = st.text_input(label("field.name", "Name"))
+                line_type = st.selectbox(
+                    label("field.type", "Type"),
+                    ["main", "side"],
+                    format_func=line_type_label,
+                )
+                ultimate_goal = st.text_area(label("field.ultimate_goal", "Ultimate Goal"))
+                sort_order = st.number_input(
+                    label("field.sort_order", "Sort Order"), min_value=0, value=0, step=1
+                )
+                active = st.checkbox(label("field.active", "Active"), value=True)
+                if st.form_submit_button(label("btn.create_line", "Create Line")):
+                    if not name.strip():
+                        st.error(label("error.name_required", "Name is required."))
+                    else:
+                        crud.upsert_line(
+                            name.strip(),
+                            line_type,
+                            ultimate_goal,
+                            1 if active else 0,
+                            int(sort_order),
+                        )
+                        st.success(label("msg.line_created", "Line created."))
+                        st.rerun()
         return
+
+    with st.expander(label("section.add_line", "Add Line"), expanded=False):
+        with st.form("line_add_form"):
+            name = st.text_input(label("field.name", "Name"))
+            line_type = st.selectbox(
+                label("field.type", "Type"),
+                ["main", "side"],
+                format_func=line_type_label,
+            )
+            ultimate_goal = st.text_area(label("field.ultimate_goal", "Ultimate Goal"))
+            sort_order = st.number_input(
+                label("field.sort_order", "Sort Order"), min_value=0, value=0, step=1
+            )
+            active = st.checkbox(label("field.active", "Active"), value=True)
+            if st.form_submit_button(label("btn.create_line", "Create Line")):
+                if not name.strip():
+                    st.error(label("error.name_required", "Name is required."))
+                else:
+                    crud.upsert_line(
+                        name.strip(),
+                        line_type,
+                        ultimate_goal,
+                        1 if active else 0,
+                        int(sort_order),
+                    )
+                    st.success(label("msg.line_created", "Line created."))
+                    st.rerun()
 
     line_map = {line["id"]: line for line in lines}
     selected_line_id = st.selectbox(
@@ -514,125 +544,123 @@ def mainlines_page() -> None:
     )
     line = line_map[selected_line_id]
 
-    st.subheader(label("section.edit_line", "Edit Line"))
-    with st.form("line_edit_form"):
-        name = st.text_input(label("field.name", "Name"), value=line["name"])
-        line_type = st.selectbox(
-            label("field.type", "Type"),
-            ["main", "side"],
-            index=["main", "side"].index(line["type"]),
-            format_func=line_type_label,
-        )
-        ultimate_goal = st.text_area(
-            label("field.ultimate_goal", "Ultimate Goal"),
-            value=line.get("ultimate_goal") or "",
-        )
-        sort_order = st.number_input(
-            label("field.sort_order", "Sort Order"),
-            min_value=0,
-            value=int(line["sort_order"]),
-            step=1,
-        )
-        active = st.checkbox(label("field.active", "Active"), value=bool(line["active"]))
-        if st.form_submit_button(label("btn.save_line", "Save Line")):
-            if not name.strip():
-                st.error(label("error.name_required", "Name is required."))
-            else:
-                crud.upsert_line(
-                    name.strip(),
-                    line_type,
-                    ultimate_goal,
-                    1 if active else 0,
-                    int(sort_order),
-                    line_id=line["id"],
-                )
-                st.success(label("msg.line_updated", "Line updated."))
-                st.rerun()
+    with st.expander(label("section.edit_line", "Edit Line"), expanded=False):
+        with st.form("line_edit_form"):
+            name = st.text_input(label("field.name", "Name"), value=line["name"])
+            line_type = st.selectbox(
+                label("field.type", "Type"),
+                ["main", "side"],
+                index=["main", "side"].index(line["type"]),
+                format_func=line_type_label,
+            )
+            ultimate_goal = st.text_area(
+                label("field.ultimate_goal", "Ultimate Goal"),
+                value=line.get("ultimate_goal") or "",
+            )
+            sort_order = st.number_input(
+                label("field.sort_order", "Sort Order"),
+                min_value=0,
+                value=int(line["sort_order"]),
+                step=1,
+            )
+            active = st.checkbox(label("field.active", "Active"), value=bool(line["active"]))
+            if st.form_submit_button(label("btn.save_line", "Save Line")):
+                if not name.strip():
+                    st.error(label("error.name_required", "Name is required."))
+                else:
+                    crud.upsert_line(
+                        name.strip(),
+                        line_type,
+                        ultimate_goal,
+                        1 if active else 0,
+                        int(sort_order),
+                        line_id=line["id"],
+                    )
+                    st.success(label("msg.line_updated", "Line updated."))
+                    st.rerun()
 
     st.subheader(label("section.quests", "Quests"))
     quests = crud.list_quests(selected_line_id, active_only=False)
+    active_quests = [quest for quest in quests if quest["active"]]
+
+    from fate_core.db import db_connection
+
+    with db_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT qc.quest_id
+            FROM quest_completions qc
+            JOIN quests q ON q.id = qc.quest_id
+            WHERE q.line_id = ?
+            """,
+            (selected_line_id,),
+        ).fetchall()
+    completed_ids = {row["quest_id"] for row in rows}
+
+    total_weight = sum(quest["difficulty"] for quest in active_quests)
+    completed_weight = sum(
+        quest["difficulty"] for quest in active_quests if quest["id"] in completed_ids
+    )
+    if total_weight > 0:
+        st.caption(
+            f"{label('label.line_progress', 'Line Progress')} — "
+            f"{label('label.weighted_progress', 'Weighted Progress')}: "
+            f"{completed_weight} / {total_weight}"
+        )
+        st.progress(completed_weight / total_weight)
+
     if quests:
+        quests_by_chapter = {}
         for quest in quests:
-            completed, total = rules.line_progress(selected_line_id)
-            boss_label = yes_no(bool(quest["is_boss"]))
-            st.write(
-                f"{quest['order_idx']}. {quest['title']} "
-                f"({label('label.difficulty', 'difficulty')} {quest['difficulty']}, "
-                f"{label('label.boss', 'boss')}={boss_label})"
+            chapter = quest.get("chapter") or label("label.uncategorized", "Uncategorized")
+            quests_by_chapter.setdefault(chapter, []).append(quest)
+
+        for chapter_name, chapter_quests in quests_by_chapter.items():
+            st.markdown(f"**{chapter_name}**")
+            chapter_active = [quest for quest in chapter_quests if quest["active"]]
+            chapter_total = sum(quest["difficulty"] for quest in chapter_active)
+            chapter_completed = sum(
+                quest["difficulty"]
+                for quest in chapter_active
+                if quest["id"] in completed_ids
             )
-        st.caption(f"{label('label.progress', 'Progress')}: {completed} / {total}")
+            if chapter_total > 0:
+                st.caption(
+                    f"{label('label.chapter_progress', 'Chapter Progress')} — "
+                    f"{label('label.weighted_progress', 'Weighted Progress')}: "
+                    f"{chapter_completed} / {chapter_total}"
+                )
+                st.progress(chapter_completed / chapter_total)
+            for quest in chapter_quests:
+                boss_label = yes_no(bool(quest["is_boss"]))
+                active_label = yes_no(bool(quest["active"]))
+                st.write(
+                    f"{quest['order_idx']}. {quest['title']} "
+                    f"({label('label.difficulty', 'difficulty')} {quest['difficulty']}, "
+                    f"{label('label.boss', 'boss')}={boss_label}, "
+                    f"{label('field.active', 'Active')}={active_label})"
+                )
     else:
         st.info(label("info.no_quests", "No quests yet."))
 
-    st.subheader(label("section.add_quest", "Add Quest"))
-    with st.form("quest_add_form"):
-        title = st.text_input(label("field.title", "Title"))
-        chapter = st.text_input(label("field.chapter_optional", "Chapter (optional)"))
-        dod = st.text_area(label("field.definition_of_done", "Definition of Done"))
-        order_idx = st.number_input(
-            label("field.order_index", "Order Index"), min_value=1, value=1, step=1
-        )
-        difficulty = st.number_input(
-            label("field.difficulty_range", "Difficulty (1-5)"),
-            min_value=1,
-            max_value=5,
-            value=1,
-            step=1,
-        )
-        is_boss = st.checkbox(label("field.is_boss", "Is Boss"), value=False)
-        active = st.checkbox(label("field.active", "Active"), value=True)
-        if st.form_submit_button(label("btn.create_quest", "Create Quest")):
-            if not title.strip():
-                st.error(label("error.title_required", "Title is required."))
-            else:
-                crud.upsert_quest(
-                    selected_line_id,
-                    chapter or None,
-                    int(order_idx),
-                    title.strip(),
-                    dod,
-                    int(difficulty),
-                    1 if is_boss else 0,
-                    1 if active else 0,
-                )
-                st.success(label("msg.quest_created", "Quest created."))
-                st.rerun()
-
-    st.subheader(label("section.edit_quest", "Edit Quest"))
-    if quests:
-        quest_map = {quest["id"]: quest for quest in quests}
-        selected_quest_id = st.selectbox(
-            label("field.select_quest", "Select Quest"),
-            options=list(quest_map.keys()),
-            format_func=lambda qid: quest_map[qid]["title"],
-        )
-        quest = quest_map[selected_quest_id]
-        with st.form("quest_edit_form"):
-            title = st.text_input(label("field.title", "Title"), value=quest["title"])
-            chapter = st.text_input(
-                label("field.chapter_optional", "Chapter (optional)"),
-                value=quest.get("chapter") or "",
-            )
-            dod = st.text_area(
-                label("field.definition_of_done", "Definition of Done"),
-                value=quest.get("dod") or "",
-            )
+    with st.expander(label("section.add_quest", "Add Quest"), expanded=not quests):
+        with st.form("quest_add_form"):
+            title = st.text_input(label("field.title", "Title"))
+            chapter = st.text_input(label("field.chapter_optional", "Chapter (optional)"))
+            dod = st.text_area(label("field.definition_of_done", "Definition of Done"))
             order_idx = st.number_input(
-                label("field.order_index", "Order Index"),
-                min_value=1,
-                value=int(quest["order_idx"]),
-                step=1,
+                label("field.order_index", "Order Index"), min_value=1, value=1, step=1
             )
             difficulty = st.number_input(
                 label("field.difficulty_range", "Difficulty (1-5)"),
                 min_value=1,
                 max_value=5,
-                value=int(quest["difficulty"]),
+                value=1,
                 step=1,
             )
-            is_boss = st.checkbox(label("field.is_boss", "Is Boss"), value=bool(quest["is_boss"]))
-            active = st.checkbox(label("field.active", "Active"), value=bool(quest["active"]))
-            if st.form_submit_button(label("btn.save_quest", "Save Quest")):
+            is_boss = st.checkbox(label("field.is_boss", "Is Boss"), value=False)
+            active = st.checkbox(label("field.active", "Active"), value=True)
+            if st.form_submit_button(label("btn.create_quest", "Create Quest")):
                 if not title.strip():
                     st.error(label("error.title_required", "Title is required."))
                 else:
@@ -645,10 +673,61 @@ def mainlines_page() -> None:
                         int(difficulty),
                         1 if is_boss else 0,
                         1 if active else 0,
-                        quest_id=quest["id"],
                     )
-                    st.success(label("msg.quest_updated", "Quest updated."))
+                    st.success(label("msg.quest_created", "Quest created."))
                     st.rerun()
+
+    if quests:
+        quest_map = {quest["id"]: quest for quest in quests}
+        with st.expander(label("section.edit_quest", "Edit Quest"), expanded=False):
+            selected_quest_id = st.selectbox(
+                label("field.select_quest", "Select Quest"),
+                options=list(quest_map.keys()),
+                format_func=lambda qid: quest_map[qid]["title"],
+            )
+            quest = quest_map[selected_quest_id]
+            with st.form("quest_edit_form"):
+                title = st.text_input(label("field.title", "Title"), value=quest["title"])
+                chapter = st.text_input(
+                    label("field.chapter_optional", "Chapter (optional)"),
+                    value=quest.get("chapter") or "",
+                )
+                dod = st.text_area(
+                    label("field.definition_of_done", "Definition of Done"),
+                    value=quest.get("dod") or "",
+                )
+                order_idx = st.number_input(
+                    label("field.order_index", "Order Index"),
+                    min_value=1,
+                    value=int(quest["order_idx"]),
+                    step=1,
+                )
+                difficulty = st.number_input(
+                    label("field.difficulty_range", "Difficulty (1-5)"),
+                    min_value=1,
+                    max_value=5,
+                    value=int(quest["difficulty"]),
+                    step=1,
+                )
+                is_boss = st.checkbox(label("field.is_boss", "Is Boss"), value=bool(quest["is_boss"]))
+                active = st.checkbox(label("field.active", "Active"), value=bool(quest["active"]))
+                if st.form_submit_button(label("btn.save_quest", "Save Quest")):
+                    if not title.strip():
+                        st.error(label("error.title_required", "Title is required."))
+                    else:
+                        crud.upsert_quest(
+                            selected_line_id,
+                            chapter or None,
+                            int(order_idx),
+                            title.strip(),
+                            dod,
+                            int(difficulty),
+                            1 if is_boss else 0,
+                            1 if active else 0,
+                            quest_id=quest["id"],
+                        )
+                        st.success(label("msg.quest_updated", "Quest updated."))
+                        st.rerun()
 
 
 def reviews_page() -> None:
