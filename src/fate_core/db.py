@@ -69,6 +69,7 @@ def init_db() -> None:
                 interval_days INTEGER,
                 anchor_date TEXT,
                 cooldown_days INTEGER,
+                next_due_date TEXT,
                 created_at TEXT DEFAULT (datetime('now')),
                 FOREIGN KEY (habit_id) REFERENCES habits(id)
             )
@@ -158,6 +159,10 @@ def init_db() -> None:
             )
             """
         )
+        columns = conn.execute("PRAGMA table_info(habit_schedules)").fetchall()
+        column_names = {row["name"] for row in columns}
+        if "next_due_date" not in column_names:
+            conn.execute("ALTER TABLE habit_schedules ADD COLUMN next_due_date TEXT")
         conn.execute(
             """
             INSERT INTO habit_schedules (habit_id, schedule_type)

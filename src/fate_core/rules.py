@@ -32,7 +32,6 @@ def _is_habit_scheduled(
     habit: dict,
     schedule: dict | None,
     day_date: date_cls,
-    last_completion_date: str | None,
 ) -> bool:
     schedule_type = (schedule or {}).get("schedule_type") or "always"
     if schedule_type == "always":
@@ -57,10 +56,11 @@ def _is_habit_scheduled(
         cooldown_days = int((schedule or {}).get("cooldown_days") or 0)
         if cooldown_days <= 0:
             return True
-        if not last_completion_date:
+        next_due_date = _date_only((schedule or {}).get("next_due_date"))
+        if not next_due_date:
             return True
-        last_date = date_cls.fromisoformat(last_completion_date)
-        return (day_date - last_date).days > cooldown_days
+        due_date = date_cls.fromisoformat(next_due_date)
+        return day_date >= due_date
     return True
 
 
@@ -81,25 +81,12 @@ def list_scheduled_habits(day: str) -> list[dict]:
             """,
             tuple(habit_ids),
         ).fetchall()
-        last_rows = conn.execute(
-            f"""
-            SELECT habit_id, MAX(date) AS last_date
-            FROM habit_logs
-            WHERE habit_id IN ({placeholders})
-              AND status IN ('min', 'normal')
-              AND date <= ?
-            GROUP BY habit_id
-            """,
-            (*habit_ids, day),
-        ).fetchall()
     schedule_map = {row["habit_id"]: dict(row) for row in schedule_rows}
-    last_map = {row["habit_id"]: row["last_date"] for row in last_rows}
     scheduled = []
     for habit_row in habits:
         habit = dict(habit_row)
         schedule = schedule_map.get(habit["id"])
-        last_completion = last_map.get(habit["id"])
-        if _is_habit_scheduled(habit, schedule, day_date, last_completion):
+        if _is_habit_scheduled(habit, schedule, day_date):
             scheduled.append(habit)
     return scheduled
 

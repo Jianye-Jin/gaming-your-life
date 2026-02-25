@@ -108,21 +108,39 @@ def upsert_habit_schedule(
     interval_days: int | None,
     anchor_date: str | None,
     cooldown_days: int | None,
+    next_due_date: str | None = None,
 ) -> None:
     with db_connection() as conn:
         conn.execute(
             """
             INSERT INTO habit_schedules
-                (habit_id, schedule_type, weekly_days, interval_days, anchor_date, cooldown_days)
-            VALUES (?, ?, ?, ?, ?, ?)
+                (habit_id, schedule_type, weekly_days, interval_days, anchor_date, cooldown_days, next_due_date)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(habit_id) DO UPDATE SET
                 schedule_type = excluded.schedule_type,
                 weekly_days = excluded.weekly_days,
                 interval_days = excluded.interval_days,
                 anchor_date = excluded.anchor_date,
-                cooldown_days = excluded.cooldown_days
+                cooldown_days = excluded.cooldown_days,
+                next_due_date = excluded.next_due_date
             """,
-            (habit_id, schedule_type, weekly_days, interval_days, anchor_date, cooldown_days),
+            (
+                habit_id,
+                schedule_type,
+                weekly_days,
+                interval_days,
+                anchor_date,
+                cooldown_days,
+                next_due_date,
+            ),
+        )
+
+
+def set_habit_next_due_date(habit_id: int, next_due_date: str | None) -> None:
+    with db_connection() as conn:
+        conn.execute(
+            "UPDATE habit_schedules SET next_due_date = ? WHERE habit_id = ?",
+            (next_due_date, habit_id),
         )
 
 

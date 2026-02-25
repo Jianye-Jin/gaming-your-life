@@ -108,6 +108,7 @@ LABEL_KEYS = {
     "label.chapter_progress": "Chapter Progress",
     "label.uncategorized": "Uncategorized",
     "label.schedule": "Schedule",
+    "label.next_due_date": "Next Due Date",
     "label.total_habits": "Total Habits",
     "label.total_lines": "Total Lines",
     "label.total_quest_completions": "Total Quest Completions",
@@ -240,6 +241,12 @@ def schedule_summary(schedule: dict | None) -> str:
             return f"{schedule_type_label('interval')}: {interval_days}"
     if schedule_type == "cooldown":
         cooldown_days = schedule.get("cooldown_days")
+        next_due_date = schedule.get("next_due_date")
+        if cooldown_days and next_due_date:
+            return (
+                f"{schedule_type_label('cooldown')}: {cooldown_days} "
+                f"({label('label.next_due_date', 'Next Due Date')}: {next_due_date})"
+            )
         if cooldown_days:
             return f"{schedule_type_label('cooldown')}: {cooldown_days}"
     return schedule_type_label(schedule_type)
@@ -251,6 +258,7 @@ def today_page() -> None:
     day_str = selected_date.isoformat()
 
     habits = rules.list_scheduled_habits(day_str)
+    schedule_map = crud.list_habit_schedules([habit["id"] for habit in habits])
     habit_logs = crud.get_habit_logs(day_str, [h["id"] for h in habits])
 
     st.subheader(label("section.habits", "Habits"))
@@ -276,6 +284,13 @@ def today_page() -> None:
                 for habit in habits:
                     status = st.session_state.get(f"habit_status_{habit['id']}", "none")
                     crud.upsert_habit_log(day_str, habit["id"], status, None, None)
+                    if status in ("min", "normal"):
+                        schedule = schedule_map.get(habit["id"])
+                        if schedule and schedule.get("schedule_type") == "cooldown":
+                            cooldown_days = int(schedule.get("cooldown_days") or 0)
+                            if cooldown_days > 0:
+                                next_due = (selected_date + timedelta(days=cooldown_days)).isoformat()
+                                crud.set_habit_next_due_date(habit["id"], next_due)
                 st.success(label("msg.habits.saved", "Habits saved."))
                 st.rerun()
 
@@ -614,6 +629,9 @@ def consistency_page() -> None:
                 if not name.strip():
                     st.error(label("error.name_required", "Name is required."))
                 else:
+                    next_due_date = None
+                    if schedule_type == "cooldown":
+                        next_due_date = schedule.get("next_due_date")
                     crud.upsert_habit(
                         name.strip(),
                         group,
@@ -632,6 +650,7 @@ def consistency_page() -> None:
                         int(interval_days) if interval_days else None,
                         anchor_date.isoformat() if anchor_date else None,
                         int(cooldown_days) if cooldown_days else None,
+                        next_due_date,
                     )
                     st.success(label("msg.habit_updated", "Habit updated."))
                     st.rerun()
