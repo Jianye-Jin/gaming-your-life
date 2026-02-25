@@ -51,7 +51,8 @@ def _is_habit_scheduled(
             return False
         anchor_date = date_cls.fromisoformat(anchor_date_str)
         delta_days = (day_date - anchor_date).days
-        return delta_days >= 0 and delta_days % interval_days == 0
+        period = interval_days + 1
+        return delta_days >= 0 and delta_days % period == 0
     if schedule_type == "cooldown":
         cooldown_days = int((schedule or {}).get("cooldown_days") or 0)
         if cooldown_days <= 0:
