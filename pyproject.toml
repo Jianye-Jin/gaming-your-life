@@ -11,7 +11,8 @@ requires-python = ">=3.11"
 dependencies = ["openpyxl"]
 
 [project.scripts]
-fate = "gml.cli:main"
+fate = "fate_app.launcher:main"
+fate-cli = "gml.cli:main"
 
 [tool.setuptools]
 package-dir = {"" = "src"}
