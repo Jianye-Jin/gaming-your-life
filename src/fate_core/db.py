@@ -62,6 +62,20 @@ def init_db() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS habit_schedules (
+                habit_id INTEGER PRIMARY KEY,
+                schedule_type TEXT NOT NULL DEFAULT 'always',
+                weekly_days TEXT,
+                interval_days INTEGER,
+                anchor_date TEXT,
+                cooldown_days INTEGER,
+                created_at TEXT DEFAULT (datetime('now')),
+                FOREIGN KEY (habit_id) REFERENCES habits(id)
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS lines (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 name TEXT NOT NULL,
@@ -142,6 +156,14 @@ def init_db() -> None:
                 key TEXT PRIMARY KEY,
                 value TEXT
             )
+            """
+        )
+        conn.execute(
+            """
+            INSERT INTO habit_schedules (habit_id, schedule_type)
+            SELECT h.id, 'always'
+            FROM habits h
+            WHERE h.id NOT IN (SELECT habit_id FROM habit_schedules)
             """
         )
         count = conn.execute("SELECT COUNT(*) AS c FROM evidence_types").fetchone()["c"]

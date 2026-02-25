@@ -81,6 +81,11 @@ LABEL_KEYS = {
     "field.sort_order": "Sort Order",
     "field.active": "Active",
     "field.select_habit": "Select Habit",
+    "field.schedule_type": "Schedule Type",
+    "field.weekly_days": "Weekly Days",
+    "field.interval_days": "Interval Days",
+    "field.anchor_date": "Anchor Date",
+    "field.cooldown_days": "Cooldown Days",
     "field.filter_lines": "Filter Lines",
     "field.type": "Type",
     "field.ultimate_goal": "Ultimate Goal",
@@ -102,6 +107,7 @@ LABEL_KEYS = {
     "label.line_progress": "Line Progress",
     "label.chapter_progress": "Chapter Progress",
     "label.uncategorized": "Uncategorized",
+    "label.schedule": "Schedule",
     "label.total_habits": "Total Habits",
     "label.total_lines": "Total Lines",
     "label.total_quest_completions": "Total Quest Completions",
@@ -132,6 +138,17 @@ LABEL_KEYS = {
     "error.evidence_type_required": "Evidence type name is required.",
     "error.evidence_type_exists": "Evidence type already exists.",
     "error.evidence_type_delete_none": "Select an evidence type to delete.",
+    "schedule.type.always": "Always",
+    "schedule.type.weekly": "Weekly",
+    "schedule.type.interval": "Interval",
+    "schedule.type.cooldown": "Cooldown",
+    "weekday.0": "Monday",
+    "weekday.1": "Tuesday",
+    "weekday.2": "Wednesday",
+    "weekday.3": "Thursday",
+    "weekday.4": "Friday",
+    "weekday.5": "Saturday",
+    "weekday.6": "Sunday",
     "evidence.type.none": "",
     "evidence.type.commit": "commit",
     "evidence.type.file": "file",
@@ -139,6 +156,9 @@ LABEL_KEYS = {
     "evidence.type.note": "note",
     "evidence.type.other": "other",
 }
+
+SCHEDULE_TYPES = ["always", "weekly", "interval", "cooldown"]
+WEEKDAY_OPTIONS = list(range(7))
 
 
 def label(key: str, default_value: str) -> str:
@@ -172,12 +192,65 @@ def yes_no(value: bool) -> str:
     return label("term.yes", "Yes") if value else label("term.no", "No")
 
 
+def schedule_type_label(schedule_type: str) -> str:
+    return label(f"schedule.type.{schedule_type}", schedule_type.title())
+
+
+def weekday_label(day_idx: int) -> str:
+    return label(f"weekday.{day_idx}", str(day_idx))
+
+
+def parse_weekly_days(raw: str | None) -> list[int]:
+    if not raw:
+        return []
+    parts = [part.strip() for part in raw.split(",") if part.strip()]
+    days = []
+    for part in parts:
+        try:
+            day_idx = int(part)
+        except ValueError:
+            continue
+        if 0 <= day_idx <= 6:
+            days.append(day_idx)
+    return sorted(set(days))
+
+
+def serialize_weekly_days(days: list[int]) -> str | None:
+    if not days:
+        return None
+    return ",".join(str(day) for day in sorted(set(days)))
+
+
+def schedule_summary(schedule: dict | None) -> str:
+    if not schedule:
+        return schedule_type_label("always")
+    schedule_type = schedule.get("schedule_type") or "always"
+    if schedule_type == "weekly":
+        days = parse_weekly_days(schedule.get("weekly_days"))
+        if not days:
+            return schedule_type_label("weekly")
+        day_labels = ", ".join(weekday_label(day) for day in days)
+        return f"{schedule_type_label('weekly')}: {day_labels}"
+    if schedule_type == "interval":
+        interval_days = schedule.get("interval_days")
+        anchor_date = schedule.get("anchor_date")
+        if interval_days and anchor_date:
+            return f"{schedule_type_label('interval')}: {interval_days} @ {anchor_date}"
+        if interval_days:
+            return f"{schedule_type_label('interval')}: {interval_days}"
+    if schedule_type == "cooldown":
+        cooldown_days = schedule.get("cooldown_days")
+        if cooldown_days:
+            return f"{schedule_type_label('cooldown')}: {cooldown_days}"
+    return schedule_type_label(schedule_type)
+
+
 def today_page() -> None:
     st.title(nav_label("today"))
     selected_date = st.date_input(label("field.date", "Date"), value=date_cls.today())
     day_str = selected_date.isoformat()
 
-    habits = crud.list_habits(active_only=True)
+    habits = rules.list_scheduled_habits(day_str)
     habit_logs = crud.get_habit_logs(day_str, [h["id"] for h in habits])
 
     st.subheader(label("section.habits", "Habits"))
@@ -351,10 +424,12 @@ def today_page() -> None:
 def consistency_page() -> None:
     st.title(nav_label("consistency"))
     habits = crud.list_habits(active_only=False)
+    schedules = crud.list_habit_schedules([habit["id"] for habit in habits])
 
     if habits:
         habit_rows = []
         for habit in habits:
+            schedule = schedules.get(habit["id"])
             habit_rows.append(
                 {
                     label("field.name", "Name"): habit["name"],
@@ -365,6 +440,7 @@ def consistency_page() -> None:
                     label("field.normal_xp", "Normal XP"): habit["normal_xp"],
                     label("field.sort_order", "Sort Order"): habit["sort_order"],
                     label("field.active", "Active"): yes_no(bool(habit["active"])),
+                    label("label.schedule", "Schedule"): schedule_summary(schedule),
                 }
             )
         st.dataframe(habit_rows, use_container_width=True, hide_index=True)
@@ -389,11 +465,44 @@ def consistency_page() -> None:
                 label("field.sort_order", "Sort Order"), min_value=0, value=0, step=1
             )
             active = st.checkbox(label("field.active", "Active"), value=True)
+            schedule_type = st.selectbox(
+                label("field.schedule_type", "Schedule Type"),
+                SCHEDULE_TYPES,
+                format_func=schedule_type_label,
+            )
+            weekly_days = []
+            interval_days = None
+            anchor_date = None
+            cooldown_days = None
+            if schedule_type == "weekly":
+                weekly_days = st.multiselect(
+                    label("field.weekly_days", "Weekly Days"),
+                    WEEKDAY_OPTIONS,
+                    default=WEEKDAY_OPTIONS,
+                    format_func=weekday_label,
+                )
+            elif schedule_type == "interval":
+                interval_days = st.number_input(
+                    label("field.interval_days", "Interval Days"),
+                    min_value=1,
+                    value=1,
+                    step=1,
+                )
+                anchor_date = st.date_input(
+                    label("field.anchor_date", "Anchor Date"), value=date_cls.today()
+                )
+            elif schedule_type == "cooldown":
+                cooldown_days = st.number_input(
+                    label("field.cooldown_days", "Cooldown Days"),
+                    min_value=1,
+                    value=1,
+                    step=1,
+                )
             if st.form_submit_button(label("btn.create_habit", "Create Habit")):
                 if not name.strip():
                     st.error(label("error.name_required", "Name is required."))
                 else:
-                    crud.upsert_habit(
+                    habit_id = crud.upsert_habit(
                         name.strip(),
                         group,
                         min_desc,
@@ -402,6 +511,14 @@ def consistency_page() -> None:
                         int(normal_xp),
                         1 if active else 0,
                         int(sort_order),
+                    )
+                    crud.upsert_habit_schedule(
+                        habit_id,
+                        schedule_type,
+                        serialize_weekly_days(weekly_days),
+                        int(interval_days) if interval_days else None,
+                        anchor_date.isoformat() if anchor_date else None,
+                        int(cooldown_days) if cooldown_days else None,
                     )
                     st.success(label("msg.habit_created", "Habit created."))
                     st.rerun()
@@ -451,6 +568,48 @@ def consistency_page() -> None:
                 step=1,
             )
             active = st.checkbox(label("field.active", "Active"), value=bool(habit["active"]))
+            schedule = schedules.get(habit["id"], {})
+            schedule_type_default = schedule.get("schedule_type") or "always"
+            if schedule_type_default not in SCHEDULE_TYPES:
+                schedule_type_default = "always"
+            schedule_type = st.selectbox(
+                label("field.schedule_type", "Schedule Type"),
+                SCHEDULE_TYPES,
+                index=SCHEDULE_TYPES.index(schedule_type_default),
+                format_func=schedule_type_label,
+            )
+            weekly_days = []
+            interval_days = None
+            anchor_date = None
+            cooldown_days = None
+            if schedule_type == "weekly":
+                existing_days = parse_weekly_days(schedule.get("weekly_days"))
+                weekly_days = st.multiselect(
+                    label("field.weekly_days", "Weekly Days"),
+                    WEEKDAY_OPTIONS,
+                    default=existing_days or WEEKDAY_OPTIONS,
+                    format_func=weekday_label,
+                )
+            elif schedule_type == "interval":
+                interval_days = st.number_input(
+                    label("field.interval_days", "Interval Days"),
+                    min_value=1,
+                    value=int(schedule.get("interval_days") or 1),
+                    step=1,
+                )
+                anchor_raw = schedule.get("anchor_date") or habit.get("created_at") or ""
+                anchor_str = anchor_raw[:10] if anchor_raw else date_cls.today().isoformat()
+                anchor_date = st.date_input(
+                    label("field.anchor_date", "Anchor Date"),
+                    value=date_cls.fromisoformat(anchor_str),
+                )
+            elif schedule_type == "cooldown":
+                cooldown_days = st.number_input(
+                    label("field.cooldown_days", "Cooldown Days"),
+                    min_value=1,
+                    value=int(schedule.get("cooldown_days") or 1),
+                    step=1,
+                )
             if st.form_submit_button(label("btn.save_habit", "Save Habit")):
                 if not name.strip():
                     st.error(label("error.name_required", "Name is required."))
@@ -465,6 +624,14 @@ def consistency_page() -> None:
                         1 if active else 0,
                         int(sort_order),
                         habit_id=habit["id"],
+                    )
+                    crud.upsert_habit_schedule(
+                        habit["id"],
+                        schedule_type,
+                        serialize_weekly_days(weekly_days),
+                        int(interval_days) if interval_days else None,
+                        anchor_date.isoformat() if anchor_date else None,
+                        int(cooldown_days) if cooldown_days else None,
                     )
                     st.success(label("msg.habit_updated", "Habit updated."))
                     st.rerun()

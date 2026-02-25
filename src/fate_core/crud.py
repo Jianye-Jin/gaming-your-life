@@ -85,6 +85,47 @@ def get_habit_logs(date: str, habit_ids: Iterable[int]) -> dict[int, dict]:
     return {row["habit_id"]: dict(row) for row in rows}
 
 
+def list_habit_schedules(habit_ids: Iterable[int]) -> dict[int, dict]:
+    habit_ids = list(habit_ids)
+    if not habit_ids:
+        return {}
+    placeholders = ",".join("?" for _ in habit_ids)
+    with db_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT * FROM habit_schedules
+            WHERE habit_id IN ({placeholders})
+            """,
+            tuple(habit_ids),
+        ).fetchall()
+    return {row["habit_id"]: dict(row) for row in rows}
+
+
+def upsert_habit_schedule(
+    habit_id: int,
+    schedule_type: str,
+    weekly_days: str | None,
+    interval_days: int | None,
+    anchor_date: str | None,
+    cooldown_days: int | None,
+) -> None:
+    with db_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO habit_schedules
+                (habit_id, schedule_type, weekly_days, interval_days, anchor_date, cooldown_days)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(habit_id) DO UPDATE SET
+                schedule_type = excluded.schedule_type,
+                weekly_days = excluded.weekly_days,
+                interval_days = excluded.interval_days,
+                anchor_date = excluded.anchor_date,
+                cooldown_days = excluded.cooldown_days
+            """,
+            (habit_id, schedule_type, weekly_days, interval_days, anchor_date, cooldown_days),
+        )
+
+
 def list_lines(active_only: bool = False, line_type: str | None = None) -> list[dict]:
     clauses = []
     params: list = []
