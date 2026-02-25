@@ -86,6 +86,7 @@ LABEL_KEYS = {
     "field.interval_days": "Interval Days",
     "field.anchor_date": "Anchor Date",
     "field.cooldown_days": "Cooldown Days",
+    "field.hide_rest_habits": "Hide Rest Day Habits",
     "field.filter_lines": "Filter Lines",
     "field.type": "Type",
     "field.ultimate_goal": "Ultimate Goal",
@@ -109,6 +110,8 @@ LABEL_KEYS = {
     "label.uncategorized": "Uncategorized",
     "label.schedule": "Schedule",
     "label.next_due_date": "Next Due Date",
+    "label.rest_day": "Rest Day",
+    "label.cooldown_remaining": "Cooldown Remaining Days",
     "label.total_habits": "Total Habits",
     "label.total_lines": "Total Lines",
     "label.total_quest_completions": "Total Quest Completions",
@@ -257,8 +260,16 @@ def today_page() -> None:
     selected_date = st.date_input(label("field.date", "Date"), value=date_cls.today())
     day_str = selected_date.isoformat()
 
-    habits = rules.list_scheduled_habits(day_str)
-    schedule_map = crud.list_habit_schedules([habit["id"] for habit in habits])
+    all_habits = crud.list_habits(active_only=True)
+    scheduled_habits = rules.list_scheduled_habits(day_str)
+    scheduled_ids = {habit["id"] for habit in scheduled_habits}
+    schedule_map = crud.list_habit_schedules([habit["id"] for habit in all_habits])
+    hide_rest_habits = st.checkbox(label("field.hide_rest_habits", "Hide Rest Day Habits"))
+    habits = (
+        [habit for habit in all_habits if habit["id"] in scheduled_ids]
+        if hide_rest_habits
+        else all_habits
+    )
     habit_logs = crud.get_habit_logs(day_str, [h["id"] for h in habits])
 
     st.subheader(label("section.habits", "Habits"))
@@ -273,15 +284,35 @@ def today_page() -> None:
                 st.markdown(f"**{group_label(group)}**")
                 for habit in group_habits:
                     default_status = habit_logs.get(habit["id"], {}).get("status", "none")
+                    is_active_today = habit["id"] in scheduled_ids
                     st.selectbox(
                         habit["name"],
                         options=["none", "min", "normal"],
                         index=["none", "min", "normal"].index(default_status),
                         format_func=status_label,
+                        disabled=not is_active_today,
                         key=f"habit_status_{habit['id']}",
                     )
+                    if not is_active_today:
+                        schedule = schedule_map.get(habit["id"])
+                        rest_label = label("label.rest_day", "Rest Day")
+                        if schedule and schedule.get("schedule_type") == "cooldown":
+                            next_due = schedule.get("next_due_date")
+                            if next_due:
+                                due_date = date_cls.fromisoformat(next_due[:10])
+                                remaining = (due_date - selected_date).days
+                                if remaining > 0:
+                                    st.caption(
+                                        f"{rest_label} — "
+                                        f"{label('label.cooldown_remaining', 'Cooldown Remaining Days')}: "
+                                        f"{remaining}"
+                                    )
+                                    continue
+                        st.caption(rest_label)
             if st.form_submit_button(label("btn.save_habits", "Save Habits")):
                 for habit in habits:
+                    if habit["id"] not in scheduled_ids:
+                        continue
                     status = st.session_state.get(f"habit_status_{habit['id']}", "none")
                     crud.upsert_habit_log(day_str, habit["id"], status, None, None)
                     if status in ("min", "normal"):
