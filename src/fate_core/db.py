@@ -107,6 +107,17 @@ def init_db() -> None:
         )
         conn.execute(
             """
+            CREATE TABLE IF NOT EXISTS evidence_types (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                name TEXT NOT NULL UNIQUE,
+                active INTEGER DEFAULT 1,
+                sort_order INTEGER DEFAULT 0,
+                created_at TEXT DEFAULT (datetime('now'))
+            )
+            """
+        )
+        conn.execute(
+            """
             CREATE TABLE IF NOT EXISTS reviews_weekly (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 week_start TEXT NOT NULL UNIQUE,
@@ -133,3 +144,19 @@ def init_db() -> None:
             )
             """
         )
+        count = conn.execute("SELECT COUNT(*) AS c FROM evidence_types").fetchone()["c"]
+        if count == 0:
+            defaults = [
+                ("commit", 1, 0),
+                ("file", 1, 1),
+                ("issue", 1, 2),
+                ("note", 1, 3),
+                ("other", 1, 4),
+            ]
+            conn.executemany(
+                """
+                INSERT INTO evidence_types (name, active, sort_order)
+                VALUES (?, ?, ?)
+                """,
+                defaults,
+            )

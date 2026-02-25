@@ -35,6 +35,7 @@ LABEL_KEYS = {
     "term.side": "Side",
     "term.yes": "Yes",
     "term.no": "No",
+    "option.none": "None",
     "status.none": "None",
     "status.min": "Min",
     "status.normal": "Normal",
@@ -51,6 +52,8 @@ LABEL_KEYS = {
     "btn.save_quest": "Save Quest",
     "btn.save_review": "Save Review",
     "btn.save_labels": "Save Labels",
+    "btn.add_evidence_type": "Add Evidence Type",
+    "btn.delete_evidence_type": "Delete Evidence Type",
     "section.habits": "Habits",
     "section.mainline_push": "Mainline Push",
     "section.feedback": "Feedback",
@@ -66,6 +69,7 @@ LABEL_KEYS = {
     "field.focus_line": "Focus Line",
     "field.minutes": "Minutes",
     "field.evidence_type": "Evidence Type",
+    "field.evidence_type_new": "New Evidence Type",
     "field.evidence_text_required": "Evidence Text (required)",
     "field.evidence_ref_required": "Evidence Reference (required)",
     "field.name": "Name",
@@ -116,9 +120,14 @@ LABEL_KEYS = {
     "msg.quest_completion_saved": "Quest completion saved.",
     "msg.review_saved": "Review saved.",
     "msg.labels_updated": "Labels updated.",
+    "msg.evidence_type_added": "Evidence type added.",
+    "msg.evidence_type_deleted": "Evidence type deleted.",
     "error.name_required": "Name is required.",
     "error.title_required": "Title is required.",
     "error.no_quest_available": "No quest available to complete.",
+    "error.evidence_type_required": "Evidence type name is required.",
+    "error.evidence_type_exists": "Evidence type already exists.",
+    "error.evidence_type_delete_none": "Select an evidence type to delete.",
     "evidence.type.none": "",
     "evidence.type.commit": "commit",
     "evidence.type.file": "file",
@@ -126,8 +135,6 @@ LABEL_KEYS = {
     "evidence.type.note": "note",
     "evidence.type.other": "other",
 }
-
-EVIDENCE_TYPES = ["", "commit", "file", "issue", "note", "other"]
 
 
 def label(key: str, default_value: str) -> str:
@@ -155,12 +162,6 @@ def filter_line_label(filter_value: str) -> str:
     if filter_value == "all":
         return label("filter.lines.all", "All")
     return line_type_label(filter_value)
-
-
-def evidence_type_label(evidence_type: str) -> str:
-    if evidence_type == "":
-        return label("evidence.type.none", "")
-    return label(f"evidence.type.{evidence_type}", evidence_type)
 
 
 def yes_no(value: bool) -> str:
@@ -250,10 +251,21 @@ def today_page() -> None:
                 value=int(st.session_state.get("completion_minutes", 25)),
                 step=1,
             )
-            evidence_type = st.selectbox(
+            evidence_types = crud.list_evidence_types(active_only=True)
+            evidence_type_map = {etype["id"]: etype for etype in evidence_types}
+            evidence_type_id = st.selectbox(
                 label("field.evidence_type", "Evidence Type"),
-                EVIDENCE_TYPES,
-                format_func=evidence_type_label,
+                options=[None, *evidence_type_map.keys()],
+                format_func=lambda etype_id: (
+                    label("option.none", "None")
+                    if etype_id is None
+                    else evidence_type_map[etype_id]["name"]
+                ),
+            )
+            new_type_name = st.text_input(label("field.evidence_type_new", "New Evidence Type"))
+            add_type = st.form_submit_button(label("btn.add_evidence_type", "Add Evidence Type"))
+            delete_type = st.form_submit_button(
+                label("btn.delete_evidence_type", "Delete Evidence Type")
             )
             evidence_text = st.text_input(
                 label("field.evidence_text_required", "Evidence Text (required)")
@@ -261,16 +273,48 @@ def today_page() -> None:
             evidence_ref = st.text_input(
                 label("field.evidence_ref_required", "Evidence Reference (required)")
             )
-            if st.form_submit_button(label("btn.save_evidence", "Save Evidence / Complete Push")):
+            save_completion = st.form_submit_button(
+                label("btn.save_evidence", "Save Evidence / Complete Push")
+            )
+            if add_type:
+                if not new_type_name.strip():
+                    st.error(label("error.evidence_type_required", "Evidence type name is required."))
+                else:
+                    existing = crud.get_evidence_type_by_name(new_type_name.strip())
+                    if existing and existing["active"]:
+                        st.error(label("error.evidence_type_exists", "Evidence type already exists."))
+                    else:
+                        if existing:
+                            crud.set_evidence_type_active(existing["id"], 1)
+                        else:
+                            next_sort = (
+                                max((etype["sort_order"] for etype in evidence_types), default=-1) + 1
+                            )
+                            crud.upsert_evidence_type(new_type_name.strip(), 1, next_sort)
+                        st.success(label("msg.evidence_type_added", "Evidence type added."))
+                        st.rerun()
+            elif delete_type:
+                if evidence_type_id is None:
+                    st.error(
+                        label("error.evidence_type_delete_none", "Select an evidence type to delete.")
+                    )
+                else:
+                    crud.set_evidence_type_active(evidence_type_id, 0)
+                    st.success(label("msg.evidence_type_deleted", "Evidence type deleted."))
+                    st.rerun()
+            elif save_completion:
                 if not next_quest:
                     st.error(label("error.no_quest_available", "No quest available to complete."))
                 else:
+                    evidence_type_name = (
+                        evidence_type_map[evidence_type_id]["name"] if evidence_type_id else None
+                    )
                     try:
                         crud.create_quest_completion(
                             day_str,
                             next_quest["id"],
                             minutes,
-                            evidence_type or None,
+                            evidence_type_name,
                             evidence_text,
                             evidence_ref,
                         )

@@ -225,6 +225,60 @@ def list_quest_completions(date: str | None = None) -> list[dict]:
     return [dict(row) for row in rows]
 
 
+def list_evidence_types(active_only: bool = True) -> list[dict]:
+    clause = "WHERE active = 1" if active_only else ""
+    with db_connection() as conn:
+        rows = conn.execute(
+            f"""
+            SELECT * FROM evidence_types
+            {clause}
+            ORDER BY sort_order ASC, id ASC
+            """
+        ).fetchall()
+    return [dict(row) for row in rows]
+
+
+def get_evidence_type_by_name(name: str) -> dict | None:
+    with db_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM evidence_types WHERE LOWER(name) = LOWER(?)",
+            (name,),
+        ).fetchone()
+    return dict(row) if row else None
+
+
+def upsert_evidence_type(
+    name: str,
+    active: int,
+    sort_order: int,
+    evidence_type_id: int | None = None,
+) -> int:
+    with db_connection() as conn:
+        if evidence_type_id is None:
+            cur = conn.execute(
+                """
+                INSERT INTO evidence_types (name, active, sort_order)
+                VALUES (?, ?, ?)
+                """,
+                (name, active, sort_order),
+            )
+            return int(cur.lastrowid)
+        conn.execute(
+            """
+            UPDATE evidence_types
+            SET name = ?, active = ?, sort_order = ?
+            WHERE id = ?
+            """,
+            (name, active, sort_order, evidence_type_id),
+        )
+        return evidence_type_id
+
+
+def set_evidence_type_active(evidence_type_id: int, active: int) -> None:
+    with db_connection() as conn:
+        conn.execute("UPDATE evidence_types SET active = ? WHERE id = ?", (active, evidence_type_id))
+
+
 def upsert_review_weekly(week_start: str, effective: str, friction: str, next_change: str) -> None:
     with db_connection() as conn:
         conn.execute(
