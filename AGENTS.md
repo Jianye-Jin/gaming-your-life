@@ -44,3 +44,10 @@
 - After changes, provide:
   - how to run the app
   - how to run minimal sanity checks
+
+## Logging (MANDATORY)
+- Maintain a repo log in docs/codex/ (daily file: docs/codex/YYYY-MM-DD.md).
+- For every user request:
+  1) First append the user prompt verbatim to today's log.
+  2) After finishing, append: plan summary, commands run, files changed, and commit SHA(s).
+- Never skip logging even for small edits.
